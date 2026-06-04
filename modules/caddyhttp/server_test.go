@@ -99,6 +99,36 @@ func TestServer_LogRequest_WithTrace(t *testing.T) {
 	}`, buf.String())
 }
 
+func TestServer_LogRequest_ClientDisconnect(t *testing.T) {
+	s := &Server{}
+
+	// simulate a client that disconnected before a response could be
+	// written: the request context is canceled and no status was recorded
+	ctx, cancel := context.WithCancel(context.Background())
+	ctx = context.WithValue(ctx, ExtraLogFieldsCtxKey, new(ExtraLogFields))
+	cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	wrec := NewResponseRecorder(rec, nil, nil)
+
+	duration := 50 * time.Millisecond
+	repl := NewTestReplacer(req)
+	bodyReader := &lengthReader{Source: req.Body}
+	shouldLogCredentials := false
+
+	buf := bytes.Buffer{}
+	accLog := testLogger(buf.Write)
+	s.logRequest(accLog, req, wrec, &duration, repl, bodyReader, shouldLogCredentials)
+
+	// the misleading 0 status should be reported as 499 (client closed request)
+	assert.JSONEq(t, `{
+		"msg":"handled request", "level":"info", "bytes_read":0,
+		"duration":"50ms", "resp_headers": {}, "size":0,
+		"status":499, "user_id":""
+	}`, buf.String())
+}
+
 func BenchmarkServer_LogRequest(b *testing.B) {
 	s := &Server{}
 

@@ -841,6 +841,15 @@ func (s *Server) logRequest(
 	status := wrec.Status()
 	size := wrec.Size()
 
+	// if no response was written, the status will be 0; the most common
+	// reason is that the client disconnected before we could respond, in
+	// which case the request context is canceled. Reflect that with the
+	// conventional 499 ("client closed request") code instead of a
+	// misleading 0 that looks like a normally handled request. See #7396.
+	if status == 0 && ctx.Err() != nil {
+		status = 499
+	}
+
 	repl.Set("http.response.status", status) // will be 0 if no response is written by us (Go will write 200 to client)
 	repl.Set("http.response.size", size)
 	repl.Set("http.response.duration", duration)
